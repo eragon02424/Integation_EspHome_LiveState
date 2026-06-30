@@ -1,0 +1,1 @@
+{\n  \"name\": \"ESPHome LiveState\",\n  \"render_readme\": true,\n  \"domains\": [\"binary_sensor\"],\n  \"iot_class\": \"local_polling\"\n}\n
