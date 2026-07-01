@@ -6,17 +6,26 @@ from homeassistant import config_entries
 from . import DOMAIN
 
 
-async def _fetch_devices(url: str, token: str) -> list[dict]:
+async def _fetch_devices(url: str, token: str) -> tuple[str | None, list[dict]]:
+    """Fetch devices from addon. Returns (error_code, devices).
+    
+    error_code is one of: None (success), "cannot_connect", "invalid_auth"
+    """
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{url.rstrip('/')}/devices",
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=10),
-        ) as resp:
-            if resp.status != 200:
-                raise ConnectionError(f"HTTP {resp.status}")
-            return await resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{url.rstrip('/')}/devices",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 401:
+                    return "invalid_auth", []
+                if resp.status != 200:
+                    return "cannot_connect", []
+                return None, await resp.json()
+    except Exception:
+        return "cannot_connect", []
 
 
 class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -29,23 +38,13 @@ class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             url = user_input["addon_url"].rstrip("/")
             token = user_input.get("bearer_token", "")
 
-            try:
-                devices = await _fetch_devices(url, token)
-            except Exception:
-                # Addon not reachable at all
-                errors["base"] = "cannot_connect"
-                devices = []
+            error_code, devices = await _fetch_devices(url, token)
 
-            if not errors:
-                # Check that at least one device has a MAC address.
-                # If no MACs are present the addon has not yet connected to any
-                # ESP device and attaching entities to the right HA device would
-                # be impossible.
-                devices_with_mac = [d for d in devices if d.get("mac_address")]
-                if not devices_with_mac:
-                    errors["base"] = "no_mac_found"
-
-            if not errors:
+            if error_code:
+                errors["base"] = error_code
+            elif not any(d.get("mac_address") for d in devices):
+                errors["base"] = "no_mac_found"
+            else:
                 return self.async_create_entry(
                     title="ESPHome LiveState",
                     data={"addon_url": url, "bearer_token": token},
@@ -55,7 +54,7 @@ class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required("addon_url", default="http://localhost:8090"): str,
-                vol.Optional("bearer_token", default=""): str,
+                vol.Required("bearer_token", default=""): str,
             }),
             errors=errors,
         )
