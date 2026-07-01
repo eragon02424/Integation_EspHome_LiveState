@@ -1,7 +1,7 @@
 {
   "domain": "esphome_livestate",
   "name": "ESPHome LiveState",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "documentation": "https://github.com/eragon02424/esphome_livestate",
   "dependencies": [],
   "codeowners": ["@eragon02424"],
