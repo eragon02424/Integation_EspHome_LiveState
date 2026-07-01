@@ -1,1 +1,18 @@
-{\n  \"config\": {\n    \"step\": {\n      \"user\": {\n        \"title\": \"ESPHome LiveState einrichten\",\n        \"data\": {\n          \"addon_url\": \"Addon URL\",\n          \"bearer_token\": \"Bearer Token\"\n        }\n      }\n    },\n    \"error\": {\n      \"cannot_connect\": \"Verbindung zum MCP ESPHome Addon fehlgeschlagen. Ist das Addon installiert und gestartet?\",\n      \"no_mac_found\": \"Kein ESP-Ger\\u00e4t mit bekannter MAC-Adresse gefunden. Das Addon hat noch keine Verbindung zu einem ESP aufgebaut. Bitte warte bis mindestens ein Ger\\u00e4t online gegangen ist und versuche es erneut.\"\n    }\n  }\n}\n
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ESPHome LiveState einrichten",
+        "data": {
+          "addon_url": "Addon URL",
+          "bearer_token": "Bearer Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum MCP ESPHome Addon fehlgeschlagen. Ist das Addon installiert und gestartet?",
+      "invalid_auth": "Ungültiger Bearer Token. Bitte den Token aus dem MCP ESPHome Addon prüfen.",
+      "no_mac_found": "Kein ESP-Gerät mit bekannter MAC-Adresse gefunden. Das Addon hat noch keine Verbindung zu einem ESP aufgebaut. Bitte warte bis mindestens ein Gerät online gegangen ist und versuche es erneut."
+    }
+  }
+}
