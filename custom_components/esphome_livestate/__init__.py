@@ -3,11 +3,16 @@
 Architecture:
 - One 'hub' config entry created by the user via the UI (contains addon URL + token)
 - One 'device' config entry per discovered ESP device, created automatically
-  when the hub coordinator first sees a device with a known MAC in the HA ESPHome
-  device registry. These entries appear as the integration source in the device page.
+  when the hub coordinator first sees a device with a known MAC in the HA device
+  registry. These entries appear as the integration source in the device page.
 
 The hub entry owns the coordinator that polls /devices every 15s.
 Each device entry owns exactly one binary_sensor entity.
+
+NOTE: We do NOT filter by cfg.domain == "esphome" because in this setup the ESP
+devices are registered via MQTT, not via the native ESPHome integration. We only
+require that a device with the matching MAC exists somewhere in the HA device
+registry.
 """
 from __future__ import annotations
 
@@ -46,11 +51,9 @@ async def _async_setup_hub(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         raise ConfigEntryNotReady(f"Cannot connect to MCP ESPHome addon: {err}") from err
 
-    # Store hub data BEFORE _sync_device_entries so device sub-entries can find it
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
 
-    # Sync on every coordinator update (new devices appear, stale ones removed)
     async def _on_update():
         await _sync_device_entries(hass, entry, coordinator)
 
@@ -58,7 +61,6 @@ async def _async_setup_hub(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.async_add_listener(lambda: hass.async_create_task(_on_update()))
     )
 
-    # Initial sync now that hass.data is populated
     await _sync_device_entries(hass, entry, coordinator)
     return True
 
@@ -79,30 +81,38 @@ async def _sync_device_entries(
     hub_entry: ConfigEntry,
     coordinator: ESPHomeLiveStateCoordinator,
 ) -> None:
-    """Create sub-entries for new devices, remove sub-entries for gone devices."""
+    """Create sub-entries for new devices, remove sub-entries for gone devices.
+
+    A device qualifies if:
+    1. The addon reports a mac_address for it
+    2. A device with that MAC exists in the HA device registry (any integration)
+    """
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 
     dev_reg = dr.async_get(hass)
     devices = coordinator.data or []
 
-    # Devices with a MAC that are registered under the ESPHome integration in HA
+    # Build lookup: mac -> ha_device for fast matching
+    mac_to_ha_device: dict[str, object] = {}
+    for ha_device in dev_reg.devices.values():
+        for conn_type, conn_val in ha_device.connections:
+            if conn_type == CONNECTION_NETWORK_MAC:
+                mac_to_ha_device[conn_val.upper()] = ha_device
+
     valid_device_names: set[str] = set()
     for device in devices:
         name = device.get("name", "")
-        mac = device.get("mac_address") or ""
+        mac = (device.get("mac_address") or "").upper()
         if not name or not mac:
             continue
-        for ha_device in dev_reg.devices.values():
-            if (CONNECTION_NETWORK_MAC, mac) not in ha_device.connections:
-                continue
-            for cfg_id in ha_device.config_entries:
-                cfg = hass.config_entries.async_get_entry(cfg_id)
-                if cfg and cfg.domain == "esphome":
-                    valid_device_names.add(name)
-                    break
+        if mac in mac_to_ha_device:
+            valid_device_names.add(name)
+        else:
+            _LOGGER.debug("Skipping %s: MAC %s not in HA device registry", name, mac)
 
-    # Existing device sub-entries for this hub
+    _LOGGER.info("ESPHome LiveState: %d valid devices found", len(valid_device_names))
+
     existing: dict[str, ConfigEntry] = {
         e.data["device_name"]: e
         for e in hass.config_entries.async_entries(DOMAIN)
@@ -110,7 +120,6 @@ async def _sync_device_entries(
         and e.data.get("hub_entry_id") == hub_entry.entry_id
     }
 
-    # Create missing sub-entries
     for name in valid_device_names:
         if name not in existing:
             _LOGGER.info("Creating device entry for %s", name)
@@ -128,7 +137,6 @@ async def _sync_device_entries(
                 )
             )
 
-    # Remove sub-entries for devices no longer valid
     for name, sub_entry in existing.items():
         if name not in valid_device_names:
             _LOGGER.info("Removing device entry for %s", name)
@@ -146,14 +154,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data[DOMAIN].pop(entry.entry_id, None)
         return unload_ok
 
-    # Hub: remove all device sub-entries and their entities first
     ent_reg = er.async_get(hass)
     for e in list(hass.config_entries.async_entries(DOMAIN)):
         if (
             e.data.get("entry_type") == ENTRY_TYPE_DEVICE
             and e.data.get("hub_entry_id") == entry.entry_id
         ):
-            # Remove all entities belonging to this device entry from the registry
             for entity in er.async_entries_for_config_entry(ent_reg, e.entry_id):
                 ent_reg.async_remove(entity.entity_id)
             await hass.config_entries.async_remove(e.entry_id)
