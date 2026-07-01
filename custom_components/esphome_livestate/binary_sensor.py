@@ -1,9 +1,12 @@
 """Binary sensor platform for ESPHome LiveState.
 
-Only creates entities for devices that already exist in the HA device registry
-(matched via MAC address). Devices without a known MAC or without an existing
-HA device are silently skipped — they will be picked up on a future poll once
-their MAC becomes available and they have been registered in HA via ESPHome.
+Only creates entities for devices that:
+1. Have a known MAC address
+2. Already exist in the HA device registry
+3. Are registered under the 'esphome' integration domain
+
+This prevents accidentally attaching to non-ESPHome devices (e.g. FritzBox
+tracked devices) that happen to share the same MAC address.
 """
 from __future__ import annotations
 import logging
@@ -11,7 +14,7 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -20,6 +23,30 @@ from . import DOMAIN
 from .coordinator import ESPHomeLiveStateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+ESPHOME_DOMAIN = "esphome"
+
+
+def _is_esphome_device(dev_reg: dr.DeviceRegistry, mac: str) -> dr.DeviceEntry | None:
+    """Return the device entry if a device with this MAC exists AND belongs to ESPHome.
+
+    HA can have multiple device entries sharing the same MAC (e.g. the actual
+    ESPHome device and a FritzBox tracked device). We only want the one that
+    was registered by the ESPHome integration, identified by having at least
+    one config entry whose domain is 'esphome'.
+    """
+    # async_get_device returns only one entry even if multiple share the MAC.
+    # We iterate all devices to find one that both matches the MAC and has
+    # an ESPHome config entry.
+    for device in dev_reg.devices.values():
+        if (CONNECTION_NETWORK_MAC, mac) not in device.connections:
+            continue
+        # Check if any config entry for this device belongs to ESPHome
+        for entry_id in device.config_entries:
+            entry = dev_reg.hass.config_entries.async_get_entry(entry_id)
+            if entry and entry.domain == ESPHOME_DOMAIN:
+                return device
+    return None
 
 
 async def async_setup_entry(
@@ -38,16 +65,15 @@ async def async_setup_entry(
             mac = device.get("mac_address") or ""
             if not name or name in known:
                 continue
-            # Skip devices without a MAC — we cannot attach them to an existing HA device
             if not mac:
                 _LOGGER.debug("Skipping %s: no MAC address known yet", name)
                 continue
-            # Skip devices that do not yet exist in the HA device registry
-            existing = dev_reg.async_get_device(
-                connections={(CONNECTION_NETWORK_MAC, mac)}
-            )
+            existing = _is_esphome_device(dev_reg, mac)
             if not existing:
-                _LOGGER.debug("Skipping %s: MAC %s not in HA device registry", name, mac)
+                _LOGGER.debug(
+                    "Skipping %s: MAC %s not found in HA device registry under ESPHome integration",
+                    name, mac,
+                )
                 continue
             known.add(name)
             new_entities.append(ESPHomeLiveStateSensor(coordinator, device))
@@ -85,7 +111,6 @@ class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        # MAC is guaranteed to be set here (checked in async_setup_entry)
         return DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, self._mac)},
             name=self._device_name,
