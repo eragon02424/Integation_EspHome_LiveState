@@ -27,7 +27,6 @@ async def async_setup_entry(
     coordinator: ESPHomeLiveStateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     device_name = entry.data["device_name"]
 
-    # Find MAC for this device from coordinator data
     mac = ""
     for d in coordinator.data or []:
         if d.get("name") == device_name:
@@ -58,6 +57,13 @@ class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
         self._mac = mac
         self._attr_unique_id = f"esphome_livestate_{device_name}_online"
 
+    async def async_added_to_hass(self) -> None:
+        """Force an immediate state write on startup so the entity reflects
+        the current online/offline status from the coordinator instead of
+        waiting for the first change event."""
+        await super().async_added_to_hass()
+        self.async_write_ha_state()
+
     @property
     def _current_device(self) -> dict | None:
         for d in self.coordinator.data or []:
@@ -74,7 +80,6 @@ class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        # No 'name' field — HA finds the device via MAC, no 'Benennen' dialog
         return DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, self._mac)},
         )
