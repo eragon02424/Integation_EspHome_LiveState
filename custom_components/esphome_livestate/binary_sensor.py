@@ -14,7 +14,7 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -28,20 +28,10 @@ ESPHOME_DOMAIN = "esphome"
 
 
 def _is_esphome_device(dev_reg: dr.DeviceRegistry, mac: str) -> dr.DeviceEntry | None:
-    """Return the device entry if a device with this MAC exists AND belongs to ESPHome.
-
-    HA can have multiple device entries sharing the same MAC (e.g. the actual
-    ESPHome device and a FritzBox tracked device). We only want the one that
-    was registered by the ESPHome integration, identified by having at least
-    one config entry whose domain is 'esphome'.
-    """
-    # async_get_device returns only one entry even if multiple share the MAC.
-    # We iterate all devices to find one that both matches the MAC and has
-    # an ESPHome config entry.
+    """Return the device entry if a device with this MAC exists AND belongs to ESPHome."""
     for device in dev_reg.devices.values():
         if (CONNECTION_NETWORK_MAC, mac) not in device.connections:
             continue
-        # Check if any config entry for this device belongs to ESPHome
         for entry_id in device.config_entries:
             entry = dev_reg.hass.config_entries.async_get_entry(entry_id)
             if entry and entry.domain == ESPHOME_DOMAIN:
@@ -111,9 +101,10 @@ class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
+        # Kein 'name' Feld — HA findet das Gerät über die MAC-Verbindung
+        # und zeigt keinen "Benennen und zuordnen" Dialog
         return DeviceInfo(
             connections={(CONNECTION_NETWORK_MAC, self._mac)},
-            name=self._device_name,
         )
 
     @property
