@@ -3,14 +3,10 @@ from __future__ import annotations
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from . import DOMAIN
+from . import DOMAIN, ENTRY_TYPE_HUB, ENTRY_TYPE_DEVICE
 
 
 async def _fetch_devices(url: str, token: str) -> tuple[str | None, list[dict]]:
-    """Fetch devices from addon. Returns (error_code, devices).
-    
-    error_code is one of: None (success), "cannot_connect", "invalid_auth"
-    """
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         async with aiohttp.ClientSession() as session:
@@ -32,6 +28,7 @@ class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
+        """User-initiated setup: creates the hub entry."""
         errors = {}
 
         if user_input is not None:
@@ -47,7 +44,11 @@ class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_create_entry(
                     title="ESPHome LiveState",
-                    data={"addon_url": url, "bearer_token": token},
+                    data={
+                        "entry_type": ENTRY_TYPE_HUB,
+                        "addon_url": url,
+                        "bearer_token": token,
+                    },
                 )
 
         return self.async_show_form(
@@ -58,3 +59,12 @@ class ESPHomeLiveStateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
             errors=errors,
         )
+
+    async def async_step_device_auto(self, user_input=None):
+        """Automatic device sub-entry creation — no UI shown."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"ESPHome LiveState — {user_input['device_name']}",
+                data=user_input,
+            )
+        return self.async_abort(reason="no_data")
