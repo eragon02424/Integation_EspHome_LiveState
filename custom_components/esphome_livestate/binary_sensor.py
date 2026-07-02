@@ -43,7 +43,7 @@ async def async_setup_entry(
 class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_has_entity_name = True
-    _attr_name = "Online"
+    _attr_name = "Verbindungs Status"
 
     def __init__(
         self,
@@ -55,12 +55,10 @@ class ESPHomeLiveStateSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
         self._device_name = device_name
         self._mac = mac
-        self._attr_unique_id = f"esphome_livestate_{device_name}_online"
+        self._attr_unique_id = f"esphome_livestate_{device_name}_verbindungsstatus"
 
     async def async_added_to_hass(self) -> None:
-        """Force an immediate state write on startup so the entity reflects
-        the current online/offline status from the coordinator instead of
-        waiting for the first change event."""
+        """Force an immediate state write on startup."""
         await super().async_added_to_hass()
         self.async_write_ha_state()
 
