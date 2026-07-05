@@ -7,7 +7,8 @@ Architecture:
   registry. These entries appear as the integration source in the device page.
 
 The hub entry owns the coordinator that polls /devices every 15s.
-Each device entry owns exactly one binary_sensor entity.
+Each device entry owns one binary_sensor entity (Verbindungs Status) and two
+sensor entities (Zuletzt Online / Zuletzt Offline).
 
 NOTE: We do NOT filter by cfg.domain == "esphome" because in this setup the ESP
 devices are registered via MQTT, not via the native ESPHome integration. We only
@@ -29,7 +30,7 @@ from .coordinator import ESPHomeLiveStateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "esphome_livestate"
-PLATFORMS = [Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 ENTRY_TYPE_HUB = "hub"
 ENTRY_TYPE_DEVICE = "device"
