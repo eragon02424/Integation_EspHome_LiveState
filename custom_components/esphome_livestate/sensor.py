@@ -3,12 +3,13 @@
 Two duration sensors per device sub-entry, both derived from the addon's
 persisted heartbeat history (survives HA/addon restarts):
 
-- "Zuletzt Online": duration of the last COMPLETED online period. Written
-  the moment the device transitions to offline (i.e. it reports how long
-  the device was online right before this disconnect).
-- "Zuletzt Offline": duration of the last COMPLETED offline period.
-  Written the moment the device transitions to online (i.e. it reports
-  how long the device was offline right before this reconnect).
+- "Zuletzt Online": while the device is currently ONLINE, shows the live
+  elapsed duration of the current online session (ticks up every
+  coordinator poll). Once the device goes offline, freezes at the
+  duration of that just-ended online session until it comes back online.
+- "Zuletzt Offline": mirror image — while currently OFFLINE, ticks up
+  live; once back online, freezes at the duration of that just-ended
+  offline period.
 """
 from __future__ import annotations
 import logging
@@ -78,7 +79,9 @@ class _BaseDurationSensor(CoordinatorEntity, SensorEntity):
 
 
 class ESPHomeLiveStateLastOnlineSensor(_BaseDurationSensor):
-    """Duration of the last completed online period (written on disconnect)."""
+    """While online: live elapsed time of the current online session.
+    While offline: frozen duration of the online session that just ended.
+    """
 
     _attr_name = "Zuletzt Online"
     _attr_icon = "mdi:lan-connect"
@@ -92,7 +95,10 @@ class ESPHomeLiveStateLastOnlineSensor(_BaseDurationSensor):
         device = self._current_device
         if not device:
             return None
-        val = device.get("last_online_duration_seconds")
+        if device.get("online"):
+            val = device.get("current_online_elapsed_seconds")
+        else:
+            val = device.get("last_online_duration_seconds")
         return round(val) if val is not None else None
 
     @property
@@ -104,7 +110,9 @@ class ESPHomeLiveStateLastOnlineSensor(_BaseDurationSensor):
 
 
 class ESPHomeLiveStateLastOfflineSensor(_BaseDurationSensor):
-    """Duration of the last completed offline period (written on reconnect)."""
+    """While offline: live elapsed time of the current offline period.
+    While online: frozen duration of the offline period that just ended.
+    """
 
     _attr_name = "Zuletzt Offline"
     _attr_icon = "mdi:lan-disconnect"
@@ -118,7 +126,10 @@ class ESPHomeLiveStateLastOfflineSensor(_BaseDurationSensor):
         device = self._current_device
         if not device:
             return None
-        val = device.get("last_offline_duration_seconds")
+        if not device.get("online"):
+            val = device.get("current_offline_elapsed_seconds")
+        else:
+            val = device.get("last_offline_duration_seconds")
         return round(val) if val is not None else None
 
     @property
