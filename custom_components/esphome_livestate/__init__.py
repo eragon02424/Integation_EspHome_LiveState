@@ -7,8 +7,13 @@ Architecture:
   registry. These entries appear as the integration source in the device page.
 
 The hub entry owns the coordinator that polls /devices every 15s.
-Each device entry owns one binary_sensor entity (Verbindungs Status) and two
-sensor entities (Zuletzt Online / Zuletzt Offline).
+Each device entry owns exactly one binary_sensor entity (Verbindungs Status).
+
+The "Zuletzt Online" / "Zuletzt Offline" duration sensors that existed in
+0.3.0/0.4.0 have been removed (redundant with the Verbindungs Status
+binary_sensor, which already carries everything needed via its state and
+history). _cleanup_stale_duration_sensors() removes any leftover entities
+from those unique_ids so they don't linger as orphaned entities.
 
 NOTE: We do NOT filter by cfg.domain == "esphome" because in this setup the ESP
 devices are registered via MQTT, not via the native ESPHome integration. We only
@@ -30,10 +35,17 @@ from .coordinator import ESPHomeLiveStateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "esphome_livestate"
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR]
 
 ENTRY_TYPE_HUB = "hub"
 ENTRY_TYPE_DEVICE = "device"
+
+# Suffixes of unique_ids from the removed "Zuletzt Online"/"Zuletzt Offline"
+# sensor.py platform (0.3.0/0.4.0). Any entity still registered with one of
+# these gets removed on every device entry setup, since sensor.py no longer
+# creates them and HA does not clean these up automatically just because a
+# platform was dropped from code.
+_STALE_UNIQUE_ID_SUFFIXES = ("_zuletzt_online", "_zuletzt_offline")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -66,6 +78,16 @@ async def _async_setup_hub(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _cleanup_stale_duration_sensors(hass: HomeAssistant, device_entry_id: str) -> None:
+    ent_reg = er.async_get(hass)
+    for entity in list(er.async_entries_for_config_entry(ent_reg, device_entry_id)):
+        unique_id = entity.unique_id or ""
+        if unique_id.endswith(_STALE_UNIQUE_ID_SUFFIXES):
+            _LOGGER.info("Removing stale duration sensor entity: %s (unique_id=%s)",
+                         entity.entity_id, unique_id)
+            ent_reg.async_remove(entity.entity_id)
+
+
 async def _async_setup_device(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub_entry_id = entry.data.get("hub_entry_id")
     hub_data = hass.data.get(DOMAIN, {}).get(hub_entry_id)
@@ -74,6 +96,7 @@ async def _async_setup_device(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = {"coordinator": hub_data["coordinator"]}
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _cleanup_stale_duration_sensors(hass, entry.entry_id)
     return True
 
 
