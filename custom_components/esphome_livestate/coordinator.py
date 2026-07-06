@@ -8,7 +8,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
-UPDATE_INTERVAL = timedelta(seconds=15)
+# 10s matches the addon's default keepalive_interval. This is also how
+# granular the "Zuletzt Online"/"Zuletzt Offline" live counters update —
+# they don't tick every second, only on each poll.
+UPDATE_INTERVAL = timedelta(seconds=10)
 
 class ESPHomeLiveStateCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
